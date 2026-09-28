@@ -1,0 +1,14 @@
+{
+  "name": "liberacao-coleta-api",
+  "version": "1.0.0",
+  "description": "API que gera o PDF de liberação para coleta a partir de um template HTML/CSS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "handlebars": "^4.7.8",
+    "puppeteer": "^25.12.0"
+  }
+}

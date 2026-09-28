@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gerar Liberação para Coleta</title>
+<style>
+  *{ box-sizing:border-box; }
+  body{
+    font-family: -apple-system, 'Inter', Arial, sans-serif;
+    background:#f1f5f9;
+    color:#0f172a;
+    margin:0;
+    padding:40px 20px;
+  }
+  .card{
+    max-width:560px;
+    margin:0 auto;
+    background:#fff;
+    border-radius:10px;
+    padding:32px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  }
+  h1{ font-size:20px; margin:0 0 4px; }
+  .desc{ font-size:13px; color:#64748b; margin:0 0 24px; }
+  label{
+    display:block;
+    font-size:12px;
+    font-weight:600;
+    color:#475569;
+    margin-bottom:5px;
+    margin-top:16px;
+  }
+  input[type=text], input[type=date]{
+    width:100%;
+    padding:9px 10px;
+    border:1px solid #cbd5e1;
+    border-radius:6px;
+    font-size:14px;
+  }
+  .exame-row{
+    display:grid;
+    grid-template-columns: 1fr 90px 110px 32px;
+    gap:8px;
+    margin-top:8px;
+    align-items:center;
+  }
+  .exame-row input{
+    padding:8px 9px;
+    border:1px solid #cbd5e1;
+    border-radius:6px;
+    font-size:13.5px;
+  }
+  .remover-exame{
+    background:#fee2e2;
+    color:#dc2626;
+    border:none;
+    border-radius:6px;
+    width:32px;
+    height:32px;
+    cursor:pointer;
+    font-size:16px;
+    line-height:1;
+  }
+  #exames-header{
+    display:grid;
+    grid-template-columns: 1fr 90px 110px 32px;
+    gap:8px;
+    margin-top:20px;
+  }
+  #exames-header span{
+    font-size:11px;
+    font-weight:600;
+    color:#64748b;
+  }
+  .btn-add{
+    margin-top:10px;
+    background:none;
+    border:1px dashed #94a3b8;
+    color:#475569;
+    padding:8px 14px;
+    border-radius:6px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .btn-gerar{
+    width:100%;
+    margin-top:28px;
+    padding:12px;
+    background:#2563eb;
+    color:#fff;
+    border:none;
+    border-radius:7px;
+    font-size:14.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .btn-gerar:disabled{ background:#93c5fd; cursor:default; }
+  .status{
+    margin-top:14px;
+    font-size:13px;
+    text-align:center;
+  }
+  .status.erro{ color:#dc2626; }
+  .status.ok{ color:#16a34a; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Liberação para coleta</h1>
+  <p class="desc">Preencha os dados do exame liberado e gere o PDF de confirmação.</p>
+
+  <form id="form-liberacao">
+    <label>Nome do cliente</label>
+    <input type="text" id="cliente" required>
+
+    <label>Data</label>
+    <input type="date" id="data" required>
+
+    <div id="exames-header">
+      <span>Exame</span>
+      <span>Sigla</span>
+      <span>Valor (R$)</span>
+      <span></span>
+    </div>
+    <div id="lista-exames"></div>
+    <button type="button" class="btn-add" id="btn-add-exame">+ adicionar exame</button>
+
+    <label>Nome do laboratório</label>
+    <input type="text" id="laboratorio_nome" required>
+
+    <label>Endereço do laboratório</label>
+    <input type="text" id="laboratorio_endereco" required>
+
+    <button type="submit" class="btn-gerar" id="btn-gerar">Gerar e baixar PDF</button>
+    <div class="status" id="status"></div>
+  </form>
+</div>
+
+<script>
+  const listaExames = document.getElementById('lista-exames');
+
+  function criarLinhaExame(nome = '', sigla = '', valor = '') {
+    const row = document.createElement('div');
+    row.className = 'exame-row';
+    row.innerHTML = `
+      <input type="text" class="exame-nome" placeholder="Ex: Hemograma" value="${nome}">
+      <input type="text" class="exame-sigla" placeholder="HEM" value="${sigla}">
+      <input type="text" class="exame-valor" placeholder="0,00" value="${valor}">
+      <button type="button" class="remover-exame" title="Remover">×</button>
+    `;
+    row.querySelector('.remover-exame').addEventListener('click', () => row.remove());
+    listaExames.appendChild(row);
+  }
+
+  document.getElementById('btn-add-exame').addEventListener('click', () => criarLinhaExame());
+
+  // Começa com uma linha em branco
+  criarLinhaExame();
+
+  const form = document.getElementById('form-liberacao');
+  const status = document.getElementById('status');
+  const btnGerar = document.getElementById('btn-gerar');
+
+  function formatarDataBR(isoDate) {
+    const [ano, mes, dia] = isoDate.split('-');
+    return `${dia}/${mes}/${ano}`;
+  }
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    status.textContent = '';
+    status.className = 'status';
+
+    const exames = Array.from(document.querySelectorAll('.exame-row')).map(row => ({
+      nome: row.querySelector('.exame-nome').value.trim(),
+      sigla: row.querySelector('.exame-sigla').value.trim(),
+      valor: parseFloat(row.querySelector('.exame-valor').value.replace(',', '.')) || 0,
+    })).filter(e => e.nome);
+
+    if (exames.length === 0) {
+      status.textContent = 'Adicione ao menos um exame.';
+      status.className = 'status erro';
+      return;
+    }
+
+    const payload = {
+      cliente: document.getElementById('cliente').value.trim(),
+      data: formatarDataBR(document.getElementById('data').value),
+      exames,
+      laboratorio_nome: document.getElementById('laboratorio_nome').value.trim(),
+      laboratorio_endereco: document.getElementById('laboratorio_endereco').value.trim(),
+    };
+
+    btnGerar.disabled = true;
+    btnGerar.textContent = 'Gerando...';
+
+    try {
+      const resp = await fetch('/liberacao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        const erro = await resp.json().catch(() => ({}));
+        throw new Error(erro.erro || `Erro ${resp.status}`);
+      }
+
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `liberacao_${payload.cliente.replace(/\s+/g, '_')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      status.textContent = 'PDF gerado com sucesso.';
+      status.className = 'status ok';
+    } catch (err) {
+      status.textContent = err.message;
+      status.className = 'status erro';
+    } finally {
+      btnGerar.disabled = false;
+      btnGerar.textContent = 'Gerar e baixar PDF';
+    }
+  });
+</script>
+
+</body>
+</html>
