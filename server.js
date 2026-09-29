@@ -57,7 +57,7 @@ function getBrowser() {
   if (!browserPromise) {
     browserPromise = puppeteer.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      args: ["--no-sandbox", "--disable-setuid-sandbox",  "--disable-dev-shm-usage"],
       // Só necessário se o Chrome baixado pelo Puppeteer não estiver no
       // caminho padrão (ex: containers Docker com Chrome do sistema).
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -97,7 +97,7 @@ app.post("/liberacao", async (req, res) => {
 
     const browser = await getBrowser();
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
+    await page.setContent(html, { waitUntil: "load", timeout: 60000 });
     const pdfBuffer = await page.pdf({
       format: "A4",
       printBackground: true,
