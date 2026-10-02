@@ -43,13 +43,62 @@
     grid-template-columns: 1fr 90px 110px 32px;
     gap:8px;
     margin-top:8px;
-    align-items:center;
+    align-items:start;
   }
   .exame-row input{
     padding:8px 9px;
     border:1px solid #cbd5e1;
     border-radius:6px;
     font-size:13.5px;
+  }
+  .autocomplete-wrap{
+    position:relative;
+  }
+  .autocomplete-wrap input{
+    width:100%;
+  }
+  .autocomplete-list{
+    display:none;
+    position:absolute;
+    z-index:20;
+    top:calc(100% + 4px);
+    left:0;
+    right:0;
+    max-height:260px;
+    overflow-y:auto;
+    background:#fff;
+    border:1px solid #cbd5e1;
+    border-radius:6px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.12);
+  }
+  .autocomplete-list.aberta{ display:block; }
+  .autocomplete-item{
+    padding:8px 10px;
+    font-size:13px;
+    cursor:pointer;
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+  }
+  .autocomplete-item:hover,
+  .autocomplete-item.ativo{
+    background:#eff6ff;
+  }
+  .autocomplete-item .nome{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .autocomplete-item .valor{
+    color:#64748b;
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .autocomplete-vazio{
+    padding:10px;
+    font-size:12.5px;
+    color:#94a3b8;
+    text-align:center;
   }
   .remover-exame{
     background:#fee2e2;
@@ -138,20 +187,92 @@
   </form>
 </div>
 
+<script src="exames-data.js"></script>
 <script>
   const listaExames = document.getElementById('lista-exames');
+  const LIMITE_SUGESTOES = 20;
+
+  function normalizar(texto) {
+    return texto
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  function formatarValorBR(valor) {
+    return valor.toFixed(2).replace('.', ',');
+  }
+
+  function buscarExames(query) {
+    const termo = normalizar(query);
+    if (!termo) {
+      return EXAMES_DISPONIVEIS.slice(0, LIMITE_SUGESTOES);
+    }
+    return EXAMES_DISPONIVEIS
+      .filter(ex => normalizar(ex.nome).includes(termo))
+      .slice(0, LIMITE_SUGESTOES);
+  }
 
   function criarLinhaExame(nome = '', sigla = '', valor = '') {
     const row = document.createElement('div');
     row.className = 'exame-row';
     row.innerHTML = `
-      <input type="text" class="exame-nome" placeholder="Ex: Hemograma" value="${nome}">
+      <div class="autocomplete-wrap">
+        <input type="text" class="exame-nome" placeholder="Digite para buscar..." value="${nome}" autocomplete="off">
+        <div class="autocomplete-list"></div>
+      </div>
       <input type="text" class="exame-sigla" placeholder="HEM" value="${sigla}">
       <input type="text" class="exame-valor" placeholder="0,00" value="${valor}">
       <button type="button" class="remover-exame" title="Remover">×</button>
     `;
     row.querySelector('.remover-exame').addEventListener('click', () => row.remove());
     listaExames.appendChild(row);
+    ativarAutocomplete(row);
+  }
+
+  function ativarAutocomplete(row) {
+    const inputNome = row.querySelector('.exame-nome');
+    const inputValor = row.querySelector('.exame-valor');
+    const dropdown = row.querySelector('.autocomplete-list');
+
+    function renderizar(itens) {
+      if (itens.length === 0) {
+        dropdown.innerHTML = '<div class="autocomplete-vazio">Nenhum exame encontrado</div>';
+      } else {
+        dropdown.innerHTML = itens.map((ex, i) => `
+          <div class="autocomplete-item" data-index="${i}">
+            <span class="nome">${ex.nome}</span>
+            <span class="valor">R$ ${formatarValorBR(ex.valor)}</span>
+          </div>
+        `).join('');
+      }
+      dropdown.classList.add('aberta');
+
+      dropdown.querySelectorAll('.autocomplete-item').forEach((el, i) => {
+        el.addEventListener('mousedown', (ev) => {
+          // mousedown (não click) para disparar antes do blur do input
+          ev.preventDefault();
+          const exame = itens[i];
+          inputNome.value = exame.nome;
+          inputValor.value = formatarValorBR(exame.valor);
+          dropdown.classList.remove('aberta');
+        });
+      });
+    }
+
+    inputNome.addEventListener('focus', () => {
+      renderizar(buscarExames(inputNome.value));
+    });
+
+    inputNome.addEventListener('input', () => {
+      renderizar(buscarExames(inputNome.value));
+    });
+
+    inputNome.addEventListener('blur', () => {
+      // pequeno atraso pra permitir o mousedown do item ser processado
+      setTimeout(() => dropdown.classList.remove('aberta'), 120);
+    });
   }
 
   document.getElementById('btn-add-exame').addEventListener('click', () => criarLinhaExame());
