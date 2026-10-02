@@ -21,8 +21,25 @@
     padding:32px;
     box-shadow:0 1px 3px rgba(0,0,0,0.08);
   }
-  h1{ font-size:20px; margin:0 0 4px; }
-  .desc{ font-size:13px; color:#64748b; margin:0 0 24px; }
+  .logo-wrap{
+    text-align:center;
+    margin-bottom:18px;
+  }
+  .logo-icon{
+    width:64px;
+    height:64px;
+    display:block;
+    margin:0 auto 6px;
+    object-fit:contain;
+  }
+  .logo-name{
+    font-size:16px;
+    font-weight:700;
+  }
+  .logo-name .meu{ color:#2563eb; }
+  .logo-name .exame{ color:#16a34a; }
+  h1{ font-size:20px; margin:0 0 4px; text-align:center; }
+  .desc{ font-size:13px; color:#64748b; margin:0 0 24px; text-align:center; }
   label{
     display:block;
     font-size:12px;
@@ -157,6 +174,10 @@
 <body>
 
 <div class="card">
+  <div class="logo-wrap">
+    <img class="logo-icon" src="logo.png" alt="MeuExame">
+    <div class="logo-name"><span class="meu">Meu</span><span class="exame">Exame</span></div>
+  </div>
   <h1>Liberação para coleta</h1>
   <p class="desc">Preencha os dados do exame liberado e gere o PDF de confirmação.</p>
 

@@ -42,6 +42,15 @@ const TEMPLATE_PATH = path.join(__dirname, "template_original.hbs");
 const templateFonte = fs.readFileSync(TEMPLATE_PATH, "utf8");
 const template = handlebars.compile(templateFonte);
 
+// A logo mora de verdade em public/logo.png (é só substituir o arquivo pra
+// trocar). O Chromium headless do Puppeteer não consegue carregar file://
+// diretamente por segurança, então lemos o arquivo aqui e entregamos pro
+// template já como data URI — o PDF funciona sem depender de rede nem de
+// caminho de arquivo em tempo de renderização.
+const LOGO_PATH = path.join(__dirname, "public", "logo.png");
+const logoBase64 = fs.readFileSync(LOGO_PATH).toString("base64");
+const LOGO_DATA_URI = `data:image/png;base64,${logoBase64}`;
+
 const CAMPOS_OBRIGATORIOS = [
   "cliente", "data", "exames", "laboratorio_nome", "laboratorio_endereco",
 ];
@@ -57,7 +66,13 @@ function getBrowser() {
   if (!browserPromise) {
     browserPromise = puppeteer.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox",  "--disable-dev-shm-usage"],
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        // Evita falhas por pouca memória compartilhada em containers
+        // como o Render free tier (512 MB de RAM).
+        "--disable-dev-shm-usage",
+      ],
       // Só necessário se o Chrome baixado pelo Puppeteer não estiver no
       // caminho padrão (ex: containers Docker com Chrome do sistema).
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -93,6 +108,7 @@ app.post("/liberacao", async (req, res) => {
       ...dados,
       exames,
       totalFormatado: formatarMoeda(total),
+      logoUrl: LOGO_DATA_URI,
     });
 
     const browser = await getBrowser();
