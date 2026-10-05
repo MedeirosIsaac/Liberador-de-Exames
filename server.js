@@ -19,11 +19,10 @@
  *           "cliente": "Ana Débora Morais da Rosa",
  *           "data": "20/08/2026",
  *           "exames": [
- *             {"nome": "Selênio Sérico", "sigla": "SEL", "valor": 17.00},
- *             {"nome": "Hormônio Anti-Mulleriano", "sigla": "HAMU", "valor": 130.00}
+ *             {"nome": "Selênio Sérico"},
+ *             {"nome": "Hormônio Anti-Mulleriano"}
  *           ],
- *           "laboratorio_nome": "DNA Petrópolis - Tércio Rosado",
- *           "laboratorio_endereco": "Rua Mossoró, nº 717 - Petrópolis - Natal/RN - CEP 59020-090"
+ *           "valorTotal": 147.00
  *         }' \
  *     --output liberacao.pdf
  */
@@ -51,9 +50,7 @@ const LOGO_PATH = path.join(__dirname, "public", "logo.png");
 const logoBase64 = fs.readFileSync(LOGO_PATH).toString("base64");
 const LOGO_DATA_URI = `data:image/png;base64,${logoBase64}`;
 
-const CAMPOS_OBRIGATORIOS = [
-  "cliente", "data", "exames", "laboratorio_nome", "laboratorio_endereco",
-];
+const CAMPOS_OBRIGATORIOS = ["cliente", "data", "exames", "valorTotal"];
 
 function formatarMoeda(valor) {
   return valor.toFixed(2).replace(".", ",");
@@ -97,17 +94,16 @@ app.post("/liberacao", async (req, res) => {
     return res.status(400).json({ erro: "'exames' precisa ser uma lista com ao menos 1 item" });
   }
 
-  try {
-    const exames = dados.exames.map((e) => ({
-      ...e,
-      valorFormatado: formatarMoeda(e.valor),
-    }));
-    const total = dados.exames.reduce((soma, e) => soma + e.valor, 0);
+  if (typeof dados.valorTotal !== "number" || dados.valorTotal <= 0) {
+    return res.status(400).json({ erro: "'valorTotal' precisa ser um número maior que zero" });
+  }
 
+  try {
     const html = template({
-      ...dados,
-      exames,
-      totalFormatado: formatarMoeda(total),
+      cliente: dados.cliente,
+      data: dados.data,
+      exames: dados.exames,
+      totalFormatado: formatarMoeda(dados.valorTotal),
       logoUrl: LOGO_DATA_URI,
     });
 

@@ -57,7 +57,7 @@
   }
   .exame-row{
     display:grid;
-    grid-template-columns: 1fr 90px 110px 32px;
+    grid-template-columns: 1fr 32px;
     gap:8px;
     margin-top:8px;
     align-items:start;
@@ -93,23 +93,10 @@
     padding:8px 10px;
     font-size:13px;
     cursor:pointer;
-    display:flex;
-    justify-content:space-between;
-    gap:10px;
   }
   .autocomplete-item:hover,
   .autocomplete-item.ativo{
     background:#eff6ff;
-  }
-  .autocomplete-item .nome{
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-  }
-  .autocomplete-item .valor{
-    color:#64748b;
-    white-space:nowrap;
-    flex-shrink:0;
   }
   .autocomplete-vazio{
     padding:10px;
@@ -129,9 +116,6 @@
     line-height:1;
   }
   #exames-header{
-    display:grid;
-    grid-template-columns: 1fr 90px 110px 32px;
-    gap:8px;
     margin-top:20px;
   }
   #exames-header span{
@@ -190,18 +174,12 @@
 
     <div id="exames-header">
       <span>Exame</span>
-      <span>Sigla</span>
-      <span>Valor (R$)</span>
-      <span></span>
     </div>
     <div id="lista-exames"></div>
     <button type="button" class="btn-add" id="btn-add-exame">+ adicionar exame</button>
 
-    <label>Nome do laboratório</label>
-    <input type="text" id="laboratorio_nome" required>
-
-    <label>Endereço do laboratório</label>
-    <input type="text" id="laboratorio_endereco" required>
+    <label>Valor total (R$)</label>
+    <input type="text" id="valor_total" placeholder="0,00" required>
 
     <button type="submit" class="btn-gerar" id="btn-gerar">Gerar e baixar PDF</button>
     <div class="status" id="status"></div>
@@ -235,7 +213,7 @@
       .slice(0, LIMITE_SUGESTOES);
   }
 
-  function criarLinhaExame(nome = '', sigla = '', valor = '') {
+  function criarLinhaExame(nome = '') {
     const row = document.createElement('div');
     row.className = 'exame-row';
     row.innerHTML = `
@@ -243,8 +221,6 @@
         <input type="text" class="exame-nome" placeholder="Digite para buscar..." value="${nome}" autocomplete="off">
         <div class="autocomplete-list"></div>
       </div>
-      <input type="text" class="exame-sigla" placeholder="HEM" value="${sigla}">
-      <input type="text" class="exame-valor" placeholder="0,00" value="${valor}">
       <button type="button" class="remover-exame" title="Remover">×</button>
     `;
     row.querySelector('.remover-exame').addEventListener('click', () => row.remove());
@@ -254,7 +230,6 @@
 
   function ativarAutocomplete(row) {
     const inputNome = row.querySelector('.exame-nome');
-    const inputValor = row.querySelector('.exame-valor');
     const dropdown = row.querySelector('.autocomplete-list');
 
     function renderizar(itens) {
@@ -262,10 +237,7 @@
         dropdown.innerHTML = '<div class="autocomplete-vazio">Nenhum exame encontrado</div>';
       } else {
         dropdown.innerHTML = itens.map((ex, i) => `
-          <div class="autocomplete-item" data-index="${i}">
-            <span class="nome">${ex.nome}</span>
-            <span class="valor">R$ ${formatarValorBR(ex.valor)}</span>
-          </div>
+          <div class="autocomplete-item" data-index="${i}">${ex.nome}</div>
         `).join('');
       }
       dropdown.classList.add('aberta');
@@ -274,9 +246,7 @@
         el.addEventListener('mousedown', (ev) => {
           // mousedown (não click) para disparar antes do blur do input
           ev.preventDefault();
-          const exame = itens[i];
-          inputNome.value = exame.nome;
-          inputValor.value = formatarValorBR(exame.valor);
+          inputNome.value = itens[i].nome;
           dropdown.classList.remove('aberta');
         });
       });
@@ -317,8 +287,6 @@
 
     const exames = Array.from(document.querySelectorAll('.exame-row')).map(row => ({
       nome: row.querySelector('.exame-nome').value.trim(),
-      sigla: row.querySelector('.exame-sigla').value.trim(),
-      valor: parseFloat(row.querySelector('.exame-valor').value.replace(',', '.')) || 0,
     })).filter(e => e.nome);
 
     if (exames.length === 0) {
@@ -327,12 +295,18 @@
       return;
     }
 
+    const valorTotal = parseFloat(document.getElementById('valor_total').value.replace(',', '.'));
+    if (!valorTotal || valorTotal <= 0) {
+      status.textContent = 'Informe o valor total.';
+      status.className = 'status erro';
+      return;
+    }
+
     const payload = {
       cliente: document.getElementById('cliente').value.trim(),
       data: formatarDataBR(document.getElementById('data').value),
       exames,
-      laboratorio_nome: document.getElementById('laboratorio_nome').value.trim(),
-      laboratorio_endereco: document.getElementById('laboratorio_endereco').value.trim(),
+      valorTotal,
     };
 
     btnGerar.disabled = true;
