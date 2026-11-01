@@ -1,104 +1,269 @@
 /**
- * API de geração da "Liberação para coleta"
- * --------------------------------------------
- * Recebe os dados via POST (JSON) e devolve o PDF pronto, gerado a partir
- * do template_original.hbs (HTML/CSS + Handlebars), renderizado por um
- * Chromium headless (Puppeteer).
+ * Liberação para coleta — API + interface (com login obrigatório)
+ * ----------------------------------------------------------------
+ * Gera o PDF "Liberação para coleta" a partir do template_original.hbs
+ * (Handlebars + HTML/CSS), renderizado por um Chromium headless (Puppeteer).
  *
- * Instalar dependências:
- *   npm install express handlebars puppeteer
+ * Segurança (etapa 1):
+ *  - Tudo exige login, exceto: /login, /auth/login, /logo.png, /login.js e /health.
+ *    As rotas novas que você criar depois já nascem protegidas.
+ *  - Páginas, lista de exames e emissão de PDF só existem para quem está logado.
+ *  - Sessão em cookie httpOnly; senhas com scrypt; bloqueio por tentativas.
  *
- * Rodar:
- *   node server.js
- *   (sobe em http://localhost:5000)
- *
- * Exemplo de chamada:
- *   curl -X POST http://localhost:5000/liberacao \
- *     -H "Content-Type: application/json" \
- *     -d '{
- *           "cliente": "Ana Débora Morais da Rosa",
- *           "data": "20/08/2026",
- *           "exames": [
- *             {"nome": "Selênio Sérico"},
- *             {"nome": "Hormônio Anti-Mulleriano"}
- *           ],
- *           "valorTotal": 147.00
- *         }' \
- *     --output liberacao.pdf
+ * Rodar localmente:
+ *   cp .env.example .env   (e preencher DATABASE_URL)
+ *   npm install
+ *   npm start
  */
 
+require("dotenv").config({ quiet: true });
+
 const express = require("express");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const fs = require("fs");
 const path = require("path");
 const handlebars = require("handlebars");
 const puppeteer = require("puppeteer");
 
+const db = require("./db");
+const auth = require("./auth");
+
+const PUBLICO = path.join(__dirname, "public");   // só o que a tela de login precisa
+const PRIVADO = path.join(__dirname, "privado");  // só depois do login
+
 const app = express();
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
 
-const TEMPLATE_PATH = path.join(__dirname, "template_original.hbs");
-const templateFonte = fs.readFileSync(TEMPLATE_PATH, "utf8");
-const template = handlebars.compile(templateFonte);
+// O Render fica na frente do app (proxy): sem isto o Express enxergaria sempre
+// "http" e o IP do proxy, quebrando o cookie "secure" e o limite por IP.
+app.set("trust proxy", 1);
 
-// A logo mora de verdade em public/logo.png (é só substituir o arquivo pra
-// trocar). O Chromium headless do Puppeteer não consegue carregar file://
-// diretamente por segurança, então lemos o arquivo aqui e entregamos pro
-// template já como data URI — o PDF funciona sem depender de rede nem de
-// caminho de arquivo em tempo de renderização.
-const LOGO_PATH = path.join(__dirname, "public", "logo.png");
-const logoBase64 = fs.readFileSync(LOGO_PATH).toString("base64");
-const LOGO_DATA_URI = `data:image/png;base64,${logoBase64}`;
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        "default-src": ["'self'"],
+        "script-src": ["'self'"], // sem JavaScript inline: mitiga XSS
+        "style-src": ["'self'", "'unsafe-inline'"],
+        "img-src": ["'self'", "data:"],
+        "connect-src": ["'self'"],
+        "font-src": ["'self'"],
+        "object-src": ["'none'"],
+        "base-uri": ["'self'"],
+        "form-action": ["'self'"],
+        "frame-ancestors": ["'none'"],
+      },
+    },
+  })
+);
+app.use(express.json({ limit: "100kb" }));
 
-const CAMPOS_OBRIGATORIOS = ["cliente", "data", "exames", "valorTotal"];
+// ------------------------------------------------------------- template ----
+
+const template = handlebars.compile(
+  fs.readFileSync(path.join(__dirname, "template_original.hbs"), "utf8")
+);
+
+// A logo mora em public/logo.png. O Chromium headless não carrega file://, então
+// lemos o arquivo aqui e entregamos ao template como data URI.
+const LOGO_DATA_URI = `data:image/png;base64,${fs
+  .readFileSync(path.join(PUBLICO, "logo.png"))
+  .toString("base64")}`;
 
 function formatarMoeda(valor) {
   return valor.toFixed(2).replace(".", ",");
 }
 
-// Uma instância de browser reaproveitada entre requisições (evita o custo
-// de abrir um Chromium novo a cada chamada).
+// Uma instância do navegador reaproveitada entre requisições.
 let browserPromise = null;
 function getBrowser() {
   if (!browserPromise) {
-    browserPromise = puppeteer.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        // Evita falhas por pouca memória compartilhada em containers
-        // como o Render free tier (512 MB de RAM).
-        "--disable-dev-shm-usage",
-      ],
-      // Só necessário se o Chrome baixado pelo Puppeteer não estiver no
-      // caminho padrão (ex: containers Docker com Chrome do sistema).
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    });
+    browserPromise = puppeteer
+      .launch({
+        headless: true,
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      })
+      .then((browser) => {
+        // Se o Chromium morrer (ex.: falta de memória no plano free), o próximo
+        // pedido abre um novo em vez de falhar para sempre.
+        browser.on("disconnected", () => {
+          browserPromise = null;
+        });
+        return browser;
+      })
+      .catch((err) => {
+        browserPromise = null;
+        throw err;
+      });
   }
   return browserPromise;
 }
 
-app.post("/liberacao", async (req, res) => {
-  const dados = req.body;
+// ------------------------------------------------------------ utilidades ----
 
-  if (!dados || typeof dados !== "object") {
-    return res.status(400).json({ erro: "corpo da requisição precisa ser um JSON válido" });
+const asyncH = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+// Defesa extra contra CSRF: se o navegador informa a origem de um POST, ela
+// precisa ser este mesmo site. (O cookie SameSite=Lax já cobre o caso comum.)
+function verificarOrigem(req, res, next) {
+  if (req.method === "POST") {
+    const origem = req.get("origin");
+    if (origem) {
+      let host = null;
+      try {
+        host = new URL(origem).host;
+      } catch {
+        /* origem inválida */
+      }
+      if (host !== req.get("host")) return res.status(403).json({ erro: "Origem não permitida." });
+    }
   }
+  next();
+}
+app.use(verificarOrigem);
 
-  const faltando = CAMPOS_OBRIGATORIOS.filter((campo) => !(campo in dados));
-  if (faltando.length > 0) {
-    return res.status(400).json({ erro: `campos obrigatórios ausentes: ${faltando.join(", ")}` });
+// ---------------------------------------------------- rotas públicas ----
+
+for (const arquivo of ["logo.png", "login.js"]) {
+  app.get(`/${arquivo}`, (req, res) => res.sendFile(path.join(PUBLICO, arquivo)));
+}
+
+app.get("/health", (req, res) => res.json({ status: "ok" }));
+
+app.get(
+  "/login",
+  asyncH(async (req, res) => {
+    if (await auth.usuarioDaSessao(req)) return res.redirect("/");
+    res.set("Cache-Control", "no-store");
+    res.sendFile(path.join(PUBLICO, "login.html"));
+  })
+);
+
+// Só tentativas que FALHAM contam para o limite (login correto não gasta cota).
+const limiteLogin = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { erro: "Muitas tentativas. Aguarde alguns minutos e tente de novo." },
+});
+
+const MENSAGEM_LOGIN_INVALIDO =
+  "E-mail ou senha inválidos, ou acesso temporariamente bloqueado.";
+
+app.post(
+  "/auth/login",
+  limiteLogin,
+  asyncH(async (req, res) => {
+    const email = auth.normalizarEmail(req.body?.email);
+    const senha = typeof req.body?.senha === "string" ? req.body.senha : "";
+
+    if (!email || !senha || email.length > 254 || senha.length > 200) {
+      return res.status(400).json({ erro: "Informe e-mail e senha." });
+    }
+
+    const usuario = await auth.buscarUsuarioPorEmail(email);
+    const hashParaComparar = usuario ? usuario.senha_hash : await auth.HASH_FALSO;
+    const senhaOk = await auth.verificarSenha(senha, hashParaComparar);
+
+    // Mesma resposta para: e-mail inexistente, senha errada, conta desativada
+    // ou bloqueada — quem ataca não descobre quais e-mails existem.
+    if (!usuario || !usuario.ativo || auth.estaBloqueado(usuario) || !senhaOk) {
+      if (usuario && usuario.ativo && !auth.estaBloqueado(usuario)) {
+        await auth.registrarFalha(usuario.id);
+      }
+      console.warn(`[auth] login recusado: ${JSON.stringify(email)} ip=${req.ip}`);
+      return res.status(401).json({ erro: MENSAGEM_LOGIN_INVALIDO });
+    }
+
+    await auth.zerarFalhas(usuario.id);
+    await auth.limparSessoesExpiradas();
+    const token = await auth.criarSessao(usuario.id, req);
+    auth.definirCookieSessao(req, res, token);
+    console.log(`[auth] login ok: ${JSON.stringify(usuario.email)} ip=${req.ip}`);
+    res.set("Cache-Control", "no-store");
+    res.json({ ok: true, nome: usuario.nome });
+  })
+);
+
+app.post(
+  "/auth/logout",
+  asyncH(async (req, res) => {
+    await auth.encerrarSessaoDoRequest(req);
+    auth.limparCookieSessao(req, res);
+    res.json({ ok: true });
+  })
+);
+
+app.get(
+  "/auth/me",
+  asyncH(async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const usuario = await auth.usuarioDaSessao(req);
+    if (!usuario) return res.status(401).json({ erro: "Não autenticado." });
+    res.json({ nome: usuario.nome, email: usuario.email, papel: usuario.papel });
+  })
+);
+
+// ================================================================
+//  A PARTIR DAQUI, TUDO EXIGE LOGIN
+// ================================================================
+app.use(auth.exigirLogin);
+
+app.use(express.static(PRIVADO)); // index.html, app.js, exames-data.js
+
+// ------------------------------------------------ emissão do PDF ----
+
+const limiteEmissao = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  keyGenerator: (req) => req.usuario.id,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { erro: "Muitas emissões em pouco tempo. Aguarde um instante." },
+});
+
+// Valida e limpa os dados no servidor — nunca confiamos no que veio do navegador.
+function validarEmissao(corpo) {
+  if (!corpo || typeof corpo !== "object") {
+    return { erro: "corpo da requisição precisa ser um JSON válido" };
   }
-
-  if (!Array.isArray(dados.exames) || dados.exames.length === 0) {
-    return res.status(400).json({ erro: "'exames' precisa ser uma lista com ao menos 1 item" });
+  const cliente = typeof corpo.cliente === "string" ? corpo.cliente.trim() : "";
+  if (!cliente || cliente.length > 120) {
+    return { erro: "'cliente' é obrigatório (até 120 caracteres)" };
   }
-
-  if (typeof dados.valorTotal !== "number" || dados.valorTotal <= 0) {
-    return res.status(400).json({ erro: "'valorTotal' precisa ser um número maior que zero" });
+  const data = typeof corpo.data === "string" ? corpo.data.trim() : "";
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(data)) {
+    return { erro: "'data' precisa estar no formato dd/mm/aaaa" };
   }
+  if (!Array.isArray(corpo.exames) || corpo.exames.length === 0 || corpo.exames.length > 40) {
+    return { erro: "'exames' precisa ser uma lista de 1 a 40 itens" };
+  }
+  const exames = [];
+  for (const item of corpo.exames) {
+    const nome = item && typeof item.nome === "string" ? item.nome.trim() : "";
+    if (!nome || nome.length > 200) {
+      return { erro: "cada exame precisa ter um 'nome' (até 200 caracteres)" };
+    }
+    exames.push({ nome });
+  }
+  const v = corpo.valorTotal;
+  if (typeof v !== "number" || !Number.isFinite(v) || v <= 0 || v >= 1e7) {
+    return { erro: "'valorTotal' precisa ser um número maior que zero" };
+  }
+  return { ok: { cliente, data, exames, valorTotal: Math.round(v * 100) / 100 } };
+}
 
-  try {
+app.post(
+  "/liberacao",
+  limiteEmissao,
+  asyncH(async (req, res) => {
+    const { erro, ok: dados } = validarEmissao(req.body);
+    if (erro) return res.status(400).json({ erro });
+
     const html = template({
       cliente: dados.cliente,
       data: dados.data,
@@ -107,40 +272,68 @@ app.post("/liberacao", async (req, res) => {
       logoUrl: LOGO_DATA_URI,
     });
 
-    const browser = await getBrowser();
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "load", timeout: 60000 });
-    const pdfBuffer = await page.pdf({
-      format: "A4",
-      printBackground: true,
-      margin: { top: "0", bottom: "0", left: "0", right: "0" },
-    });
-    await page.close();
+    let page;
+    try {
+      const browser = await getBrowser();
+      page = await browser.newPage();
+      await page.setContent(html, { waitUntil: "load", timeout: 60000 });
+      const pdf = await page.pdf({
+        format: "A4",
+        printBackground: true,
+        margin: { top: "0", bottom: "0", left: "0", right: "0" },
+      });
+      // Sem dados do cliente no log (são dados de saúde); só quem emitiu e quantos exames.
+      console.log(`[pdf] emitido por ${JSON.stringify(req.usuario.email)} (${dados.exames.length} exame(s))`);
+      res.set({
+        "Content-Type": "application/pdf",
+        "Content-Disposition": "inline; filename=liberacao_coleta.pdf",
+      });
+      res.send(Buffer.from(pdf));
+    } finally {
+      if (page) await page.close().catch(() => {});
+    }
+  })
+);
 
-    res.set({
-      "Content-Type": "application/pdf",
-      "Content-Disposition": "inline; filename=liberacao_coleta.pdf",
-    });
-    res.send(Buffer.from(pdfBuffer));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ erro: `falha ao gerar o PDF: ${err.message}` });
+// ---------------------------------------------------------------- erros ----
+
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err.type === "entity.parse.failed") {
+    return res.status(400).json({ erro: "JSON inválido." });
   }
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({ erro: "Requisição grande demais." });
+  }
+  console.error("[erro]", err);
+  res.status(500).json({ erro: "Erro interno. Tente novamente." });
 });
 
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", endpoint: "/liberacao (POST)" });
-});
+// ---------------------------------------------------------------- start ----
 
 const PORTA = process.env.PORT || 5000;
-app.listen(PORTA, () => {
-  console.log(`API rodando em http://localhost:${PORTA}`);
+
+async function iniciar() {
+  await db.iniciarBanco();
+  await auth.garantirAdminInicial();
+  await auth.limparSessoesExpiradas();
+  setInterval(() => auth.limparSessoesExpiradas().catch(() => {}), 60 * 60 * 1000).unref();
+
+  app.listen(PORTA, () => console.log(`API rodando em http://localhost:${PORTA}`));
+}
+
+iniciar().catch((err) => {
+  console.error("Falha ao iniciar:", err);
+  process.exit(1);
 });
 
-process.on("SIGINT", async () => {
-  if (browserPromise) {
-    const browser = await browserPromise;
-    await browser.close();
+async function encerrar() {
+  try {
+    if (browserPromise) await (await browserPromise).close();
+    await db.pool.end();
+  } finally {
+    process.exit(0);
   }
-  process.exit(0);
-});
+}
+process.on("SIGINT", encerrar);
+process.on("SIGTERM", encerrar); // o Render envia SIGTERM a cada novo deploy
