@@ -21,6 +21,7 @@ const NOME_COOKIE = "sid";
 const SESSAO_HORAS = Number(process.env.SESSAO_HORAS) || 12;
 const MAX_FALHAS = 5;
 const BLOQUEIO_MINUTOS = 15;
+const CONVITE_HORAS = Number(process.env.CONVITE_HORAS) || 48;
 const SENHA_MIN = 10;
 const SENHA_MAX = 200;
 
@@ -153,11 +154,92 @@ async function garantirAdminInicial() {
   }
 }
 
-// --------------------------------------------------------------- sessões ----
+// -------------------------------------------------------------- convites ----
+// Fluxo: o administrador gera um link; a PESSOA abre o link e define a própria
+// senha. Quem convida nunca conhece a senha. O link vale uma única vez e expira.
 
 function sha256(texto) {
   return crypto.createHash("sha256").update(texto).digest("hex");
 }
+
+async function criarConvite({ email, nome, papel = "operador" }) {
+  email = normalizarEmail(email);
+  nome = String(nome || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Error("E-mail inválido.");
+  if (!nome || nome.length > 120) throw new Error("Informe o nome (até 120 caracteres).");
+  if (!["admin", "operador"].includes(papel)) throw new Error("Papel deve ser 'admin' ou 'operador'.");
+
+  const token = crypto.randomBytes(32).toString("base64url");
+  const expira = new Date(Date.now() + CONVITE_HORAS * 3600 * 1000);
+
+  // Um convite novo anula os anteriores pendentes do mesmo e-mail: só o último link vale.
+  await db.query(`UPDATE convites SET encerrado_em = now() WHERE email = $1 AND encerrado_em IS NULL`, [email]);
+  await db.query(
+    `INSERT INTO convites (token_hash, email, nome, papel, expira_em) VALUES ($1, $2, $3, $4, $5)`,
+    [sha256(token), email, nome, papel, expira]
+  );
+  return { token, expira, horas: CONVITE_HORAS };
+}
+
+async function consultarConvite(token) {
+  if (typeof token !== "string" || token.length < 20 || token.length > 200) return null;
+  const { rows } = await db.query(
+    `SELECT email, nome FROM convites
+      WHERE token_hash = $1 AND encerrado_em IS NULL AND expira_em > now()`,
+    [sha256(token)]
+  );
+  return rows[0] || null;
+}
+
+// Usa o convite: cria o usuário (ou, se o e-mail já existe, redefine a senha dele).
+async function aceitarConvite(token, senha) {
+  const erroSenha = validarSenhaNova(senha);
+  if (erroSenha) return { erro: erroSenha, codigo: "senha" };
+  if (!(await consultarConvite(token))) return { erro: "Convite inválido ou expirado.", codigo: "convite" };
+
+  const senhaHash = await hashSenha(senha); // calculado fora da transação (é a parte lenta)
+  const client = await db.pool.connect();
+  try {
+    await client.query("BEGIN");
+    // FOR UPDATE: se duas abas usarem o mesmo link ao mesmo tempo, só uma passa.
+    const { rows } = await client.query(
+      `SELECT email, nome, papel FROM convites
+        WHERE token_hash = $1 AND encerrado_em IS NULL AND expira_em > now()
+        FOR UPDATE`,
+      [sha256(token)]
+    );
+    if (!rows[0]) {
+      await client.query("ROLLBACK");
+      return { erro: "Convite inválido ou expirado.", codigo: "convite" };
+    }
+    const convite = rows[0];
+
+    // E-mail novo: cria. E-mail existente: só troca a senha (nome, papel e
+    // "ativo" continuam como estão — reativar é decisão do administrador).
+    const { rows: usuario } = await client.query(
+      `INSERT INTO usuarios (id, email, nome, senha_hash, papel)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (email) DO UPDATE
+         SET senha_hash = EXCLUDED.senha_hash, tentativas_falhas = 0, bloqueado_ate = NULL
+       RETURNING id, email`,
+      [crypto.randomUUID(), convite.email, convite.nome, senhaHash, convite.papel]
+    );
+    await client.query(`DELETE FROM sessoes WHERE usuario_id = $1`, [usuario[0].id]); // derruba logins antigos
+    await client.query(
+      `UPDATE convites SET encerrado_em = now() WHERE email = $1 AND encerrado_em IS NULL`,
+      [convite.email]
+    );
+    await client.query("COMMIT");
+    return { ok: true, email: usuario[0].email };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// --------------------------------------------------------------- sessões ----
 
 function lerCookie(req, nome) {
   const cabecalho = req.headers.cookie;
@@ -210,6 +292,7 @@ async function encerrarSessoesDoUsuario(usuarioId) {
 
 async function limparSessoesExpiradas() {
   await db.query(`DELETE FROM sessoes WHERE expira_em < now()`);
+  await db.query(`DELETE FROM convites WHERE expira_em < now() - interval '7 days'`);
 }
 
 function opcoesCookie(req) {
@@ -264,6 +347,9 @@ module.exports = {
   zerarFalhas,
   estaBloqueado,
   garantirAdminInicial,
+  criarConvite,
+  consultarConvite,
+  aceitarConvite,
   criarSessao,
   usuarioDaSessao,
   encerrarSessaoDoRequest,

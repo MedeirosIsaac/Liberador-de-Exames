@@ -126,7 +126,7 @@ app.use(verificarOrigem);
 
 // ---------------------------------------------------- rotas públicas ----
 
-for (const arquivo of ["logo.png", "login.js"]) {
+for (const arquivo of ["logo.png", "login.js", "convite.js"]) {
   app.get(`/${arquivo}`, (req, res) => res.sendFile(path.join(PUBLICO, arquivo)));
 }
 
@@ -205,6 +205,55 @@ app.get(
     const usuario = await auth.usuarioDaSessao(req);
     if (!usuario) return res.status(401).json({ erro: "Não autenticado." });
     res.json({ nome: usuario.nome, email: usuario.email, papel: usuario.papel });
+  })
+);
+
+// ------------------------------------------------------------ convites ----
+// A pessoa convidada abre o link e define a própria senha. O token vem depois do
+// "#" na URL (o navegador não o envia ao servidor no GET, então ele não cai em
+// logs nem em "Referer"); a página o lê e o manda no corpo de um POST.
+
+app.get("/convite", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.sendFile(path.join(PUBLICO, "convite.html"));
+});
+
+const limiteConvite = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  skipSuccessfulRequests: true, // só tentativas que falham contam
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { erro: "Muitas tentativas. Aguarde alguns minutos e tente de novo." },
+});
+
+const MENSAGEM_CONVITE_INVALIDO =
+  "Este convite é inválido, já foi usado ou expirou. Peça um novo a quem te convidou.";
+
+app.post(
+  "/auth/convite/info",
+  limiteConvite,
+  asyncH(async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const convite = await auth.consultarConvite(req.body?.token);
+    if (!convite) return res.status(404).json({ erro: MENSAGEM_CONVITE_INVALIDO });
+    res.json({ nome: convite.nome, email: convite.email });
+  })
+);
+
+app.post(
+  "/auth/convite/aceitar",
+  limiteConvite,
+  asyncH(async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const senha = typeof req.body?.senha === "string" ? req.body.senha : "";
+    const resultado = await auth.aceitarConvite(req.body?.token, senha);
+    if (resultado.erro) {
+      if (resultado.codigo === "senha") return res.status(400).json({ erro: resultado.erro });
+      return res.status(404).json({ erro: MENSAGEM_CONVITE_INVALIDO });
+    }
+    console.log(`[auth] convite aceito: ${JSON.stringify(resultado.email)} ip=${req.ip}`);
+    res.json({ ok: true });
   })
 );
 

@@ -1,7 +1,11 @@
 /**
  * Administração de usuários (rode na pasta do projeto, com o .env preenchido):
  *
+ *   npm run usuarios -- convidar email@exemplo.com "Nome Completo" [admin|operador]
+ *        (gera um link para a PRÓPRIA pessoa definir a senha — é o jeito recomendado;
+ *         para quem já tem cadastro, serve para redefinir a senha)
  *   npm run usuarios -- criar    email@exemplo.com "Nome Completo" [admin|operador]
+ *        (você mesmo define a senha dela)
  *   npm run usuarios -- senha    email@exemplo.com
  *   npm run usuarios -- desativar email@exemplo.com
  *   npm run usuarios -- ativar    email@exemplo.com
@@ -79,6 +83,25 @@ async function exigirUsuario(email) {
 }
 
 const comandos = {
+  async convidar(email, nome, papel = "operador") {
+    if (!email || !nome) throw new Error('Uso: convidar <email> "<nome>" [admin|operador]');
+    const existente = await auth.buscarUsuarioPorEmail(email);
+    const { token, expira, horas } = await auth.criarConvite({ email, nome, papel });
+    const base = (process.env.APP_URL || "https://SEU-SITE.onrender.com").replace(/\/+$/, "");
+
+    console.log(`\nConvite criado para ${auth.normalizarEmail(email)} (uso único, válido por ${horas} horas).`);
+    if (existente) {
+      console.log("Atenção: já existe cadastro com esse e-mail. O link servirá para a pessoa REDEFINIR a senha.");
+    }
+    console.log("\nEnvie este link somente para ela (por mensagem direta, nunca em grupo):\n");
+    console.log(`  ${base}/convite#${token}\n`);
+    console.log(`Expira em: ${expira.toLocaleString("pt-BR")}`);
+    console.log("O link só aparece agora; se perder, gere outro (o anterior deixa de valer).");
+    if (!process.env.APP_URL) {
+      console.log("Dica: defina APP_URL no .env com o endereço do site para o link já sair completo.");
+    }
+  },
+
   async criar(email, nome, papel = "operador") {
     if (!email || !nome) throw new Error('Uso: criar <email> "<nome>" [admin|operador]');
     const senha = await pedirSenhaNova();
@@ -121,9 +144,18 @@ const comandos = {
     const { rows } = await db.query(
       `SELECT email, nome, papel, ativo, criado_em FROM usuarios ORDER BY criado_em`
     );
-    if (rows.length === 0) return console.log("Nenhum usuário cadastrado.");
+    if (rows.length === 0) console.log("Nenhum usuário cadastrado.");
     for (const u of rows) {
       console.log(`${u.ativo ? "ativo   " : "INATIVO "} ${u.papel.padEnd(8)} ${u.email}  —  ${u.nome}`);
+    }
+    const { rows: convites } = await db.query(
+      `SELECT email, expira_em FROM convites WHERE encerrado_em IS NULL AND expira_em > now() ORDER BY expira_em`
+    );
+    if (convites.length) {
+      console.log("\nConvites pendentes:");
+      for (const c of convites) {
+        console.log(`  ${c.email}  (expira em ${new Date(c.expira_em).toLocaleString("pt-BR")})`);
+      }
     }
   },
 };
@@ -132,7 +164,7 @@ const comandos = {
   const [comando, ...args] = process.argv.slice(2);
   try {
     if (!comandos[comando]) {
-      console.log("Comandos: criar | senha | desativar | ativar | listar  (veja o topo deste arquivo)");
+      console.log("Comandos: convidar | criar | senha | desativar | ativar | listar  (veja o topo deste arquivo)");
       process.exitCode = 1;
     } else {
       await db.iniciarBanco();

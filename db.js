@@ -65,6 +65,20 @@ async function iniciarBanco() {
 
     CREATE INDEX IF NOT EXISTS idx_sessoes_usuario ON sessoes (usuario_id);
     CREATE INDEX IF NOT EXISTS idx_sessoes_expira  ON sessoes (expira_em);
+
+    -- Convites: link de uso único para a própria pessoa definir a senha.
+    -- Só o hash do token é guardado (como nas sessões).
+    CREATE TABLE IF NOT EXISTS convites (
+      token_hash   TEXT PRIMARY KEY,
+      email        TEXT NOT NULL,
+      nome         TEXT NOT NULL,
+      papel        TEXT NOT NULL DEFAULT 'operador',
+      criado_em    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expira_em    TIMESTAMPTZ NOT NULL,
+      encerrado_em TIMESTAMPTZ  -- preenchido quando o convite é usado ou substituído
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_convites_email ON convites (email);
   `);
 }
 
