@@ -100,6 +100,28 @@ async function criarUsuario({ email, nome, senha, papel = "operador" }) {
   }
 }
 
+// Cadastro feito pela própria pessoa: a conta nasce INATIVA e só passa a
+// entrar depois que um administrador rodar "ativar".
+async function solicitarCadastro({ email, nome, senha }) {
+  email = normalizarEmail(email);
+  nome = String(nome || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return { erro: "E-mail inválido." };
+  if (!nome || nome.length > 120) return { erro: "Informe o nome (até 120 caracteres)." };
+  const erroSenha = validarSenhaNova(senha);
+  if (erroSenha) return { erro: erroSenha };
+
+  const senhaHash = await hashSenha(senha);
+  // Se o e-mail já existe, nada muda e a resposta é a mesma:
+  // o formulário não revela quais e-mails estão cadastrados.
+  await db.query(
+    `INSERT INTO usuarios (id, email, nome, senha_hash, papel, ativo)
+     VALUES ($1, $2, $3, $4, 'operador', FALSE)
+     ON CONFLICT (email) DO NOTHING`,
+    [crypto.randomUUID(), email, nome, senhaHash]
+  );
+  return { ok: true };
+}
+
 async function buscarUsuarioPorEmail(email) {
   const { rows } = await db.query(`SELECT * FROM usuarios WHERE email = $1`, [normalizarEmail(email)]);
   return rows[0] || null;
@@ -342,6 +364,7 @@ module.exports = {
   validarSenhaNova,
   normalizarEmail,
   criarUsuario,
+  solicitarCadastro,
   buscarUsuarioPorEmail,
   registrarFalha,
   zerarFalhas,

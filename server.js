@@ -257,6 +257,34 @@ app.post(
   })
 );
 
+app.get("/cadastro", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.sendFile(path.join(PUBLICO, "cadastro.html"));
+});
+
+const limiteCadastro = rateLimit({
+  windowMs: 60 * 60 * 1000, // 5 solicitações por hora por IP
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { erro: "Muitas solicitações. Tente novamente mais tarde." },
+});
+
+app.post(
+  "/auth/cadastro",
+  limiteCadastro,
+  asyncH(async (req, res) => {
+    const r = await auth.solicitarCadastro({
+      email: req.body?.email,
+      nome: req.body?.nome,
+      senha: typeof req.body?.senha === "string" ? req.body.senha : "",
+    });
+    if (r.erro) return res.status(400).json({ erro: r.erro });
+    console.log(`[auth] cadastro solicitado: ${JSON.stringify(auth.normalizarEmail(req.body?.email))} ip=${req.ip}`);
+    res.json({ ok: true });
+  })
+);
+
 // ================================================================
 //  A PARTIR DAQUI, TUDO EXIGE LOGIN
 // ================================================================
