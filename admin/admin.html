@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Usuários — Liberação para coleta</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<style>
+  *{ box-sizing:border-box; }
+  body{
+    font-family: -apple-system, 'Inter', Arial, sans-serif;
+    background:#f1f5f9;
+    color:#0f172a;
+    margin:0;
+    padding:40px 20px;
+  }
+  .card{
+    max-width:720px;
+    margin:0 auto;
+    background:#fff;
+    border-radius:10px;
+    padding:32px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  }
+  .logo-wrap{ text-align:center; margin-bottom:18px; }
+  .logo-icon{ width:64px; height:64px; display:block; margin:0 auto 6px; object-fit:contain; }
+  .logo-name{ font-size:16px; font-weight:700; }
+  .logo-name .meu{ color:#2563eb; }
+  .logo-name .exame{ color:#16a34a; }
+  h1{ font-size:20px; margin:0 0 4px; text-align:center; }
+  .desc{ font-size:13px; color:#64748b; margin:0 0 20px; text-align:center; line-height:1.5; }
+  .voltar{ display:block; text-align:center; font-size:13px; color:#2563eb; margin-bottom:20px; }
+  h2{ font-size:14px; color:#475569; margin:26px 0 8px; }
+  ul{ list-style:none; margin:0; padding:0; }
+  .usuario{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:14px 0;
+    border-bottom:1px solid #e2e8f0;
+  }
+  .info{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .info strong{ font-size:14.5px; }
+  .email{ font-size:13px; color:#475569; overflow-wrap:anywhere; }
+  .meta{ font-size:12px; color:#64748b; }
+  .selo{
+    display:inline-block;
+    font-size:11.5px;
+    font-weight:600;
+    padding:2px 8px;
+    border-radius:999px;
+    margin-right:6px;
+    background:#f0fdf4;
+    color:#16a34a;
+  }
+  .selo.pendente{ background:#fef3c7; color:#a16207; }
+  .selo.admin{ background:#eff6ff; color:#2563eb; }
+  .acoes{ display:flex; flex-wrap:wrap; gap:6px; }
+  .acoes button{
+    padding:7px 12px;
+    border-radius:6px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    border:1px solid #cbd5e1;
+    background:#fff;
+    color:#0f172a;
+  }
+  .acoes button.principal{ background:#16a34a; border-color:#16a34a; color:#fff; }
+  .acoes button.perigo{ color:#dc2626; border-color:#fecaca; }
+  .acoes button:disabled{ opacity:.5; cursor:default; }
+  button:focus-visible, a:focus-visible{ outline:2px solid #2563eb; outline-offset:2px; }
+  .voce{ font-size:12px; color:#64748b; }
+  .vazio{ font-size:13px; color:#64748b; padding:12px 0; }
+  .status{ margin-top:14px; font-size:13px; text-align:center; color:#dc2626; min-height:18px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo-wrap">
+    <img class="logo-icon" src="/logo.png" alt="MeuExame">
+    <div class="logo-name"><span class="meu">Meu</span><span class="exame">Exame</span></div>
+  </div>
+  <h1>Usuários</h1>
+  <p class="desc">Aprove quem pediu acesso e gerencie quem já usa o sistema.</p>
+  <a class="voltar" href="/">Voltar para a emissão de liberações</a>
+
+  <div class="status" id="status" role="alert"></div>
+
+  <h2>Aguardando aprovação ou desativados</h2>
+  <ul id="lista-inativos"></ul>
+
+  <h2>Com acesso</h2>
+  <ul id="lista-ativos"></ul>
+</div>
+
+<script src="/admin.js"></script>
+</body>
+</html>

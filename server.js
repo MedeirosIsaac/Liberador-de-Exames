@@ -126,7 +126,7 @@ app.use(verificarOrigem);
 
 // ---------------------------------------------------- rotas públicas ----
 
-for (const arquivo of ["logo.png", "login.js", "convite.js"]) {
+for (const arquivo of ["logo.png", "login.js", "convite.js", "cadastro.js"]) {
   app.get(`/${arquivo}`, (req, res) => res.sendFile(path.join(PUBLICO, arquivo)));
 }
 
@@ -291,6 +291,97 @@ app.post(
 app.use(auth.exigirLogin);
 
 app.use(express.static(PRIVADO)); // index.html, app.js, exames-data.js
+
+// --------------------------------------------------- administração ----
+const ADMIN_DIR = path.join(__dirname, "admin");
+
+app.get("/admin", auth.exigirAdmin, (req, res) => res.sendFile(path.join(ADMIN_DIR, "admin.html")));
+app.get("/admin.js", auth.exigirAdmin, (req, res) => res.sendFile(path.join(ADMIN_DIR, "admin.js")));
+
+app.get(
+  "/admin/api/usuarios",
+  auth.exigirAdmin,
+  asyncH(async (req, res) => {
+    const { rows } = await db.query(
+      `SELECT id, email, nome, papel, ativo, criado_em FROM usuarios ORDER BY criado_em DESC`
+    );
+    res.json({ eu: req.usuario.id, usuarios: rows });
+  })
+);
+
+// Busca o usuário alvo e impede o admin de mexer na própria conta.
+async function alvoDaAcao(req, res) {
+  const { rows } = await db.query(
+    `SELECT id, email, ativo FROM usuarios WHERE id = $1`,
+    [String(req.params.id)]
+  );
+  if (!rows[0]) {
+    res.status(404).json({ erro: "Usuário não encontrado." });
+    return null;
+  }
+  if (rows[0].id === req.usuario.id) {
+    res.status(400).json({ erro: "Você não pode alterar a sua própria conta por aqui." });
+    return null;
+  }
+  return rows[0];
+}
+
+app.post(
+  "/admin/api/usuarios/:id/ativar",
+  auth.exigirAdmin,
+  asyncH(async (req, res) => {
+    const alvo = await alvoDaAcao(req, res);
+    if (!alvo) return;
+    await db.query(
+      `UPDATE usuarios SET ativo = TRUE, tentativas_falhas = 0, bloqueado_ate = NULL WHERE id = $1`,
+      [alvo.id]
+    );
+    console.log(`[admin] ${JSON.stringify(req.usuario.email)} aprovou ${JSON.stringify(alvo.email)}`);
+    res.json({ ok: true });
+  })
+);
+
+app.post(
+  "/admin/api/usuarios/:id/desativar",
+  auth.exigirAdmin,
+  asyncH(async (req, res) => {
+    const alvo = await alvoDaAcao(req, res);
+    if (!alvo) return;
+    await db.query(`UPDATE usuarios SET ativo = FALSE WHERE id = $1`, [alvo.id]);
+    await auth.encerrarSessoesDoUsuario(alvo.id);
+    console.log(`[admin] ${JSON.stringify(req.usuario.email)} desativou ${JSON.stringify(alvo.email)}`);
+    res.json({ ok: true });
+  })
+);
+
+app.post(
+  "/admin/api/usuarios/:id/papel",
+  auth.exigirAdmin,
+  asyncH(async (req, res) => {
+    const papel = req.body?.papel;
+    if (!["admin", "operador"].includes(papel)) {
+      return res.status(400).json({ erro: "Papel deve ser 'admin' ou 'operador'." });
+    }
+    const alvo = await alvoDaAcao(req, res);
+    if (!alvo) return;
+    await db.query(`UPDATE usuarios SET papel = $2 WHERE id = $1`, [alvo.id, papel]);
+    console.log(`[admin] ${JSON.stringify(req.usuario.email)} mudou ${JSON.stringify(alvo.email)} para ${papel}`);
+    res.json({ ok: true });
+  })
+);
+
+app.post(
+  "/admin/api/usuarios/:id/excluir",
+  auth.exigirAdmin,
+  asyncH(async (req, res) => {
+    const alvo = await alvoDaAcao(req, res);
+    if (!alvo) return;
+    if (alvo.ativo) return res.status(400).json({ erro: "Desative o usuário antes de excluir." });
+    await db.query(`DELETE FROM usuarios WHERE id = $1`, [alvo.id]);
+    console.log(`[admin] ${JSON.stringify(req.usuario.email)} excluiu ${JSON.stringify(alvo.email)}`);
+    res.json({ ok: true });
+  })
+);
 
 // ------------------------------------------------ emissão do PDF ----
 

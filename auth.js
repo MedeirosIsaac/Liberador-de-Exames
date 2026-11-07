@@ -355,6 +355,14 @@ function exigirLogin(req, res, next) {
     });
 }
 
+// Só para quem já passou pelo exigirLogin e tem papel "admin".
+function exigirAdmin(req, res, next) {
+  if (req.usuario && req.usuario.papel === "admin") return next();
+  const navegador = req.method === "GET" && (req.headers.accept || "").includes("text/html");
+  if (navegador) return res.redirect(302, "/");
+  return res.status(403).json({ erro: "Apenas administradores podem fazer isso." });
+}
+
 module.exports = {
   MAX_FALHAS,
   BLOQUEIO_MINUTOS,
@@ -381,4 +389,5 @@ module.exports = {
   definirCookieSessao,
   limparCookieSessao,
   exigirLogin,
+  exigirAdmin
 };
