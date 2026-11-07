@@ -173,13 +173,20 @@
     cursor:pointer;
   }
   .btn-sair:hover{ background:#fff; }
+  .topbar-acoes{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+  a.btn-sair{ text-decoration:none; display:inline-block; }
+  .oculto{ display:none; }
 </style>
 </head>
 <body>
 
 <div class="topbar">
   <span>Olá, <strong id="usuario-nome"></strong></span>
-  <button type="button" class="btn-sair" id="btn-sair">Sair</button>
+  <div class="topbar-acoes">
+    <a class="btn-sair oculto" id="link-admin" href="/admin">Usuários</a>
+    <a class="btn-sair" href="/senha.html">Trocar senha</a>
+    <button type="button" class="btn-sair" id="btn-sair">Sair</button>
+  </div>
 </div>
 
 <div class="card">

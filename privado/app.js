@@ -16,6 +16,7 @@
       if (resp.status === 401) return irParaLogin();
       const usuario = await resp.json();
       document.getElementById('usuario-nome').textContent = usuario.nome;
+      if (usuario.papel === 'admin') document.getElementById('link-admin').classList.remove('oculto');
     } catch (_) {
       /* sem rede: o usuário continua vendo o formulário */
     }

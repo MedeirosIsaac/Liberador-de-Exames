@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Trocar senha — Liberação para coleta</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<style>
+  *{ box-sizing:border-box; }
+  body{
+    font-family: -apple-system, 'Inter', Arial, sans-serif;
+    background:#f1f5f9;
+    color:#0f172a;
+    margin:0;
+    padding:60px 20px;
+  }
+  .card{
+    max-width:400px;
+    margin:0 auto;
+    background:#fff;
+    border-radius:10px;
+    padding:32px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  }
+  .logo-wrap{ text-align:center; margin-bottom:18px; }
+  .logo-icon{ width:64px; height:64px; display:block; margin:0 auto 6px; object-fit:contain; }
+  .logo-name{ font-size:16px; font-weight:700; }
+  .logo-name .meu{ color:#2563eb; }
+  .logo-name .exame{ color:#16a34a; }
+  h1{ font-size:19px; margin:0 0 4px; text-align:center; }
+  .desc{ font-size:13px; color:#64748b; margin:0 0 20px; text-align:center; line-height:1.5; }
+  .oculto{ display:none; }
+  label{
+    display:block;
+    font-size:12px;
+    font-weight:600;
+    color:#475569;
+    margin-bottom:5px;
+    margin-top:16px;
+  }
+  input{
+    width:100%;
+    padding:9px 10px;
+    border:1px solid #cbd5e1;
+    border-radius:6px;
+    font-size:14px;
+  }
+  input:focus-visible, button:focus-visible, a:focus-visible{ outline:2px solid #2563eb; outline-offset:2px; }
+  .dica{ font-size:12px; color:#64748b; margin-top:6px; }
+  button, .btn{
+    display:block;
+    width:100%;
+    margin-top:24px;
+    padding:12px;
+    background:#2563eb;
+    color:#fff;
+    border:none;
+    border-radius:7px;
+    font-size:14.5px;
+    font-weight:600;
+    cursor:pointer;
+    text-align:center;
+    text-decoration:none;
+  }
+  button:disabled{ background:#93c5fd; cursor:default; }
+  .status{ margin-top:14px; font-size:13px; text-align:center; color:#dc2626; min-height:18px; }
+  .ok{ color:#16a34a; }
+  .rodape{ margin-top:18px; font-size:13px; text-align:center; }
+  .rodape a{ color:#2563eb; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo-wrap">
+    <img class="logo-icon" src="/logo.png" alt="MeuExame">
+    <div class="logo-name"><span class="meu">Meu</span><span class="exame">Exame</span></div>
+  </div>
+
+  <div id="formulario">
+    <h1>Trocar senha</h1>
+    <p class="desc">Ao salvar, os outros aparelhos conectados com a sua conta serão desconectados.</p>
+
+    <form id="form-senha">
+      <label for="atual">Senha atual</label>
+      <input type="password" id="atual" autocomplete="current-password" maxlength="200" required autofocus>
+
+      <label for="nova">Nova senha</label>
+      <input type="password" id="nova" autocomplete="new-password" minlength="10" maxlength="200" required>
+      <div class="dica">Mínimo de 10 caracteres.</div>
+
+      <label for="confirmar">Repita a nova senha</label>
+      <input type="password" id="confirmar" autocomplete="new-password" minlength="10" maxlength="200" required>
+
+      <button type="submit" id="btn-salvar">Salvar nova senha</button>
+      <div class="status" id="status" role="alert"></div>
+    </form>
+
+    <p class="rodape"><a href="/">Voltar para a emissão de liberações</a></p>
+  </div>
+
+  <div id="pronto" class="oculto">
+    <h1>Senha alterada</h1>
+    <p class="desc ok">Pronto. Da próxima vez, entre com a nova senha.</p>
+    <a class="btn" href="/">Voltar para a emissão de liberações</a>
+  </div>
+</div>
+
+<script src="/senha.js"></script>
+</body>
+</html>

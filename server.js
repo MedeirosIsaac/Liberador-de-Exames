@@ -383,6 +383,47 @@ app.post(
   })
 );
 
+// ------------------------------------------------- trocar a própria senha ----
+const limiteTrocaSenha = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => req.usuario.id,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { erro: "Muitas tentativas. Aguarde alguns minutos e tente de novo." },
+});
+
+app.post(
+  "/auth/trocar-senha",
+  limiteTrocaSenha,
+  asyncH(async (req, res) => {
+    const atual = typeof req.body?.senhaAtual === "string" ? req.body.senhaAtual : "";
+    const nova = typeof req.body?.senhaNova === "string" ? req.body.senhaNova : "";
+    if (!atual || atual.length > 200) return res.status(400).json({ erro: "Informe a senha atual." });
+    const erroSenha = auth.validarSenhaNova(nova);
+    if (erroSenha) return res.status(400).json({ erro: erroSenha });
+    if (nova === atual) return res.status(400).json({ erro: "A nova senha precisa ser diferente da atual." });
+
+    const { rows } = await db.query(`SELECT senha_hash FROM usuarios WHERE id = $1`, [req.usuario.id]);
+    if (!rows[0] || !(await auth.verificarSenha(atual, rows[0].senha_hash))) {
+      return res.status(400).json({ erro: "A senha atual está incorreta." });
+    }
+
+    const senhaHash = await auth.hashSenha(nova);
+    await db.query(
+      `UPDATE usuarios SET senha_hash = $2, tentativas_falhas = 0, bloqueado_ate = NULL WHERE id = $1`,
+      [req.usuario.id, senhaHash]
+    );
+    // Derruba todos os logins (outros aparelhos) e cria um novo só para este navegador.
+    await auth.encerrarSessoesDoUsuario(req.usuario.id);
+    const token = await auth.criarSessao(req.usuario.id, req);
+    auth.definirCookieSessao(req, res, token);
+    console.log(`[auth] senha trocada: ${JSON.stringify(req.usuario.email)} ip=${req.ip}`);
+    res.json({ ok: true });
+  })
+);
+
 // ------------------------------------------------ emissão do PDF ----
 
 const limiteEmissao = rateLimit({
