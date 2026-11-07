@@ -126,7 +126,7 @@ app.use(verificarOrigem);
 
 // ---------------------------------------------------- rotas públicas ----
 
-for (const arquivo of ["logo.png", "login.js", "convite.js", "cadastro.js"]) {
+for (const arquivo of ["logo.png", "login.js", "convite.js", "cadastro.js", "senha.js"]) {
   app.get(`/${arquivo}`, (req, res) => res.sendFile(path.join(PUBLICO, arquivo)));
 }
 
