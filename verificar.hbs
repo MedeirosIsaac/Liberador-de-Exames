@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Verificar autenticidade — Meu Exame</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<style>
+  *{ box-sizing:border-box; }
+  body{
+    font-family: -apple-system, 'Inter', Arial, sans-serif;
+    background:#f1f5f9;
+    color:#0f172a;
+    margin:0;
+    padding:40px 20px;
+  }
+  .card{
+    max-width:460px;
+    margin:0 auto;
+    background:#fff;
+    border-radius:10px;
+    padding:32px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.08);
+  }
+  .logo-wrap{ text-align:center; margin-bottom:18px; }
+  .logo-icon{ width:64px; height:64px; display:block; margin:0 auto 6px; object-fit:contain; }
+  .logo-name{ font-size:16px; font-weight:700; }
+  .logo-name .meu{ color:#2563eb; }
+  .logo-name .exame{ color:#16a34a; }
+  h1{ font-size:19px; margin:0 0 4px; text-align:center; }
+  .desc{ font-size:13px; color:#64748b; margin:0 0 20px; text-align:center; line-height:1.5; }
+
+  .resultado{ border-radius:8px; padding:14px 16px; margin-bottom:20px; }
+  .resultado p{ margin:0; }
+  .resultado .titulo{ font-size:15px; font-weight:700; margin-bottom:4px; }
+  .resultado .texto{ font-size:13px; line-height:1.5; }
+  .valido{ background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; }
+  .invalido{ background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+
+  dl{ margin:0; }
+  .campo{ padding:10px 0; border-bottom:1px solid #e2e8f0; }
+  dt{ font-size:11px; font-weight:600; color:#64748b; letter-spacing:.04em; margin-bottom:3px; }
+  dd{ margin:0; font-size:14px; }
+  .codigo{ font-family:'Courier New', monospace; font-weight:700; letter-spacing:.08em; }
+  ul{ margin:0; padding-left:18px; font-size:14px; }
+  li{ margin:2px 0; }
+
+  label{ display:block; font-size:12px; font-weight:600; color:#475569; margin-bottom:5px; }
+  input{
+    width:100%;
+    padding:10px;
+    border:1px solid #cbd5e1;
+    border-radius:6px;
+    font-size:15px;
+    font-family:'Courier New', monospace;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+  }
+  input:focus-visible, button:focus-visible, a:focus-visible{ outline:2px solid #2563eb; outline-offset:2px; }
+  button{
+    display:block;
+    width:100%;
+    margin-top:16px;
+    padding:12px;
+    background:#2563eb;
+    color:#fff;
+    border:none;
+    border-radius:7px;
+    font-size:14.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .rodape{ margin-top:20px; font-size:12px; color:#64748b; text-align:center; line-height:1.5; }
+  .rodape a{ color:#2563eb; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo-wrap">
+    <img class="logo-icon" src="/logo.png" alt="MeuExame">
+    <div class="logo-name"><span class="meu">Meu</span><span class="exame">Exame</span></div>
+  </div>
+  <h1>Verificar autenticidade</h1>
+
+  {{#if documento}}
+    {{#if cancelado}}
+      <div class="resultado invalido" role="status">
+        <p class="titulo">Documento cancelado</p>
+        <p class="texto">Este documento foi emitido pelo Meu Exame, mas foi cancelado em {{ canceladoEm }}. Ele não é mais válido para liberação da coleta.</p>
+      </div>
+    {{else}}
+      <div class="resultado valido" role="status">
+        <p class="titulo">Documento autêntico</p>
+        <p class="texto">Emitido pelo sistema do Meu Exame. Confira se os dados abaixo são iguais aos do documento apresentado. Qualquer diferença indica alteração.</p>
+      </div>
+    {{/if}}
+
+    <dl>
+      <div class="campo"><dt>CÓDIGO</dt><dd class="codigo">{{ codigo }}</dd></div>
+      <div class="campo"><dt>CLIENTE</dt><dd>{{ cliente }}</dd></div>
+      <div class="campo"><dt>DATA</dt><dd>{{ data }}</dd></div>
+      <div class="campo">
+        <dt>EXAMES LIBERADOS</dt>
+        <dd><ul>{{#each exames}}<li>{{ this.nome }}</li>{{/each}}</ul></dd>
+      </div>
+      <div class="campo"><dt>TOTAL PAGO</dt><dd>R$ {{ total }}</dd></div>
+      <div class="campo"><dt>EMITIDO POR</dt><dd>{{ emissor }}, em {{ emitidoEm }}</dd></div>
+    </dl>
+
+    <p class="rodape"><a href="/verificar">Verificar outro documento</a></p>
+  {{else}}
+    <p class="desc">Digite o código impresso no documento, ao lado do QR Code.</p>
+
+    {{#if naoEncontrado}}
+      <div class="resultado invalido" role="alert">
+        <p class="titulo">Código não encontrado</p>
+        <p class="texto">Nenhum documento do Meu Exame tem o código “{{ codigoDigitado }}”. Confira se foi digitado corretamente. Se estiver certo, o documento não é original.</p>
+      </div>
+    {{/if}}
+
+    <form method="get" action="/verificar">
+      <label for="codigo">Código de autenticidade</label>
+      <input type="text" id="codigo" name="codigo" placeholder="XXXX-XXXX-XXXX" maxlength="20" autocomplete="off" required autofocus>
+      <button type="submit">Verificar</button>
+    </form>
+  {{/if}}
+
+  <p class="rodape">Meu Exame | Confirmação de pagamento e liberação para coleta</p>
+</div>
+
+</body>
+</html>

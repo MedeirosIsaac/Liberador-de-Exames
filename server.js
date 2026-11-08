@@ -28,6 +28,7 @@ const puppeteer = require("puppeteer");
 
 const db = require("./db");
 const auth = require("./auth");
+const documentos = require("./documentos");
 
 const PUBLICO = path.join(__dirname, "public");   // só o que a tela de login precisa
 const PRIVADO = path.join(__dirname, "privado");  // só depois do login
@@ -285,6 +286,55 @@ app.post(
   })
 );
 
+// ---------------------------------------- verificação de autenticidade ----
+// Pública: quem recebe o documento (ex.: o laboratório) confere sem precisar de login.
+
+const verificarTemplate = handlebars.compile(
+  fs.readFileSync(path.join(__dirname, "verificar.hbs"), "utf8")
+);
+
+const limiteVerificacao = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: "Muitas consultas em pouco tempo. Aguarde alguns minutos.",
+});
+
+function urlBase(req) {
+  return (process.env.APP_URL || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+}
+
+async function paginaVerificacao(req, res, entrada) {
+  res.set({ "Cache-Control": "no-store", "X-Robots-Tag": "noindex" });
+  const digitado = typeof entrada === "string" ? entrada.trim().slice(0, 40) : "";
+  if (!digitado) return res.send(verificarTemplate({}));
+
+  const codigo = documentos.normalizarCodigo(digitado);
+  const doc = codigo ? await documentos.buscarDocumento(codigo) : null;
+  if (!doc) {
+    console.warn(`[verificar] código não encontrado: ${JSON.stringify(digitado)} ip=${req.ip}`);
+    return res.status(404).send(verificarTemplate({ naoEncontrado: true, codigoDigitado: digitado }));
+  }
+  res.send(
+    verificarTemplate({
+      documento: true,
+      cancelado: Boolean(doc.cancelado_em),
+      canceladoEm: doc.cancelado_em ? documentos.formatarDataHora(doc.cancelado_em).completo : "",
+      codigo: doc.codigo,
+      cliente: documentos.mascararNome(doc.cliente),
+      data: doc.data_coleta,
+      exames: doc.exames,
+      total: formatarMoeda(Number(doc.valor_total)),
+      emissor: doc.emissor_nome,
+      emitidoEm: documentos.formatarDataHora(doc.emitido_em).completo,
+    })
+  );
+}
+
+app.get("/verificar", limiteVerificacao, asyncH((req, res) => paginaVerificacao(req, res, req.query.codigo)));
+app.get("/verificar/:codigo", limiteVerificacao, asyncH((req, res) => paginaVerificacao(req, res, req.params.codigo)));
+
 // ================================================================
 //  A PARTIR DAQUI, TUDO EXIGE LOGIN
 // ================================================================
@@ -473,16 +523,27 @@ app.post(
     const { erro, ok: dados } = validarEmissao(req.body);
     if (erro) return res.status(400).json({ erro });
 
-    const html = template({
-      cliente: dados.cliente,
-      data: dados.data,
-      exames: dados.exames,
-      totalFormatado: formatarMoeda(dados.valorTotal),
-      logoUrl: LOGO_DATA_URI,
-    });
+    // Registra o documento primeiro: o código e o emissor vêm do servidor, nunca do navegador.
+    const registro = await documentos.registrarDocumento({ usuario: req.usuario, ...dados });
+    const base = urlBase(req);
+    const emitido = documentos.formatarDataHora(registro.emitido_em);
 
     let page;
     try {
+      const html = template({
+        cliente: dados.cliente,
+        data: dados.data,
+        exames: dados.exames,
+        totalFormatado: formatarMoeda(dados.valorTotal),
+        logoUrl: LOGO_DATA_URI,
+        emissorNome: req.usuario.nome,
+        emitidoData: emitido.data,
+        emitidoHora: emitido.hora,
+        codigo: registro.codigo,
+        qrUrl: await documentos.gerarQrDataUri(`${base}/verificar/${registro.codigo}`),
+        urlVerificacaoCurta: `${base.replace(/^https?:\/\//, "")}/verificar`,
+      });
+
       const browser = await getBrowser();
       page = await browser.newPage();
       await page.setContent(html, { waitUntil: "load", timeout: 60000 });
@@ -491,13 +552,19 @@ app.post(
         printBackground: true,
         margin: { top: "0", bottom: "0", left: "0", right: "0" },
       });
-      // Sem dados do cliente no log (são dados de saúde); só quem emitiu e quantos exames.
-      console.log(`[pdf] emitido por ${JSON.stringify(req.usuario.email)} (${dados.exames.length} exame(s))`);
+      // Sem dados do cliente no log (são dados de saúde); só quem emitiu, quantos exames e o código.
+      console.log(
+        `[pdf] emitido por ${JSON.stringify(req.usuario.email)} (${dados.exames.length} exame(s)) código ${registro.codigo}`
+      );
       res.set({
         "Content-Type": "application/pdf",
-        "Content-Disposition": "inline; filename=liberacao_coleta.pdf",
+        "Content-Disposition": `inline; filename=liberacao_${registro.codigo}.pdf`,
       });
       res.send(Buffer.from(pdf));
+    } catch (err) {
+      // Se o PDF falhar, apaga o registro: não pode existir código válido de um documento que não saiu.
+      await documentos.removerDocumento(registro.codigo).catch(() => {});
+      throw err;
     } finally {
       if (page) await page.close().catch(() => {});
     }

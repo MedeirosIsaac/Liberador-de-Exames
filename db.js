@@ -79,6 +79,21 @@ async function iniciarBanco() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_convites_email ON convites (email);
+        -- Documentos emitidos: cada PDF tem um código para conferência de autenticidade.
+    CREATE TABLE IF NOT EXISTS documentos (
+      codigo        TEXT PRIMARY KEY,
+      emissor_id    TEXT,
+      emissor_nome  TEXT NOT NULL,
+      emissor_email TEXT NOT NULL,
+      cliente       TEXT NOT NULL,
+      data_coleta   TEXT NOT NULL,
+      exames        JSONB NOT NULL,
+      valor_total   NUMERIC(12,2) NOT NULL,
+      emitido_em    TIMESTAMPTZ NOT NULL DEFAULT now(),
+      cancelado_em  TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_documentos_emitido ON documentos (emitido_em);
   `);
 }
 
