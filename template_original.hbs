@@ -166,6 +166,20 @@
     color:#94a3b8;
     margin-top:22px;
   }
+  .autenticacao{
+    display:flex;
+    align-items:center;
+    gap:16px;
+    border:1px solid #e2e8f0;
+    border-radius:8px;
+    padding:12px 14px;
+    margin-top:22px;
+  }
+  .autenticacao img{ width:96px; height:96px; flex-shrink:0; }
+  .aut-titulo{ font-size:10px; font-weight:700; letter-spacing:.06em; color:#64748b; margin:0 0 4px; }
+  .aut-emissor{ font-size:12.5px; color:#0f172a; margin:0 0 6px; }
+  .aut-codigo{ font-family:'Courier New', monospace; font-size:14px; font-weight:700; letter-spacing:.08em; color:#0f172a; margin:0 0 4px; }
+  .aut-instrucao{ font-size:10.5px; color:#64748b; margin:0; line-height:1.45; }
 
   .footer{
     text-align:center;
@@ -219,6 +233,16 @@
   <div class="local-label">LOCAL DA COLETA</div>
   <div class="local-nome">DNA Center</div>
 
+    <div class="autenticacao">
+    <img src="{{qrUrl}}" alt="QR Code de verificação">
+    <div>
+      <p class="aut-titulo">VERIFICAÇÃO DE AUTENTICIDADE</p>
+      <p class="aut-emissor">Emitido por <strong>{{ emissorNome }}</strong> em {{ emitidoData }} às {{ emitidoHora }}</p>
+      <p class="aut-codigo">{{ codigo }}</p>
+      <p class="aut-instrucao">Leia o QR Code ou acesse {{ urlVerificacaoCurta }} e digite o código para conferir se os dados deste documento são os originais.</p>
+    </div>
+  </div>
+  
   <p class="disclaimer">Pagamento confirmado pelo Meu Exame. Documento emitido eletronicamente para liberação da coleta.</p>
 
   <div class="footer">MEU EXAME | Confirmação de pagamento e liberação para coleta</div>
